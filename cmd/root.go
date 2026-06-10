@@ -7,11 +7,11 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/x/term"
 	"github.com/retlehs/quien/internal/display"
 	"github.com/retlehs/quien/internal/dnsutil"
 	"github.com/retlehs/quien/internal/mail"
 	"github.com/retlehs/quien/internal/resolver"
+	"golang.org/x/term"
 )
 
 var jsonFlag bool
@@ -48,7 +48,7 @@ func preRun() error {
 func runRoot(args []string) error {
 	// No args — show interactive prompt
 	if len(args) == 0 {
-		if !term.IsTerminal(os.Stdout.Fd()) {
+		if !term.IsTerminal(int(os.Stdout.Fd())) {
 			return fmt.Errorf("no domain or IP provided")
 		}
 		prompt := display.NewPromptModel()
@@ -95,7 +95,7 @@ func runLookup(input string, isIP bool) error {
 			return err
 		}
 	}
-	if term.IsTerminal(os.Stdout.Fd()) {
+	if term.IsTerminal(int(os.Stdout.Fd())) {
 		var m display.Model
 		if isIP {
 			m = display.NewIPModel(input)
