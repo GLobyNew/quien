@@ -18,6 +18,7 @@ import (
 var jsonFlag bool
 var resolverFlag string
 var dkimSelectorFlag []string
+var tabFlag string
 
 var rootCmd = &cobra.Command{
 	Use:          "quien [domain or IP]",
@@ -51,6 +52,15 @@ var rootCmd = &cobra.Command{
 		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if tabFlag != "" {
+			if jsonFlag {
+				return fmt.Errorf("--tab cannot be used with --json")
+			}
+			if !term.IsTerminal(int(os.Stdout.Fd())) {
+				return fmt.Errorf("--tab requires an interactive terminal")
+			}
+		}
+
 		// No args — show interactive prompt
 		if len(args) == 0 {
 			if !term.IsTerminal(int(os.Stdout.Fd())) {
@@ -67,7 +77,7 @@ var rootCmd = &cobra.Command{
 			if !submitted {
 				return nil
 			}
-			return runLookup(input, isIP)
+			return runLookup(input, isIP, tabFlag)
 		}
 
 		input := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(args[0])), ".")
@@ -91,11 +101,11 @@ var rootCmd = &cobra.Command{
 			return nil
 		}
 
-		return runLookup(input, isIP)
+		return runLookup(input, isIP, tabFlag)
 	},
 }
 
-func runLookup(input string, isIP bool) error {
+func runLookup(input string, isIP bool, tab string) error {
 	if !isIP {
 		if _, err := resolver.RegistrableDomain(input); err != nil {
 			return err
@@ -107,6 +117,11 @@ func runLookup(input string, isIP bool) error {
 			m = display.NewIPModel(input)
 		} else {
 			m = display.NewModel(input)
+		}
+		if tab != "" {
+			if err := m.SetActiveTab(tab); err != nil {
+				return err
+			}
 		}
 		p := tea.NewProgram(m)
 		if _, err := p.Run(); err != nil {
@@ -134,6 +149,12 @@ func runLookup(input string, isIP bool) error {
 
 func init() {
 	rootCmd.Flags().BoolVar(&jsonFlag, "json", false, "output as JSON")
+	rootCmd.Flags().StringVar(&tabFlag, "tab", "", "open the interactive TUI on a specific tab, case-insensitive: "+strings.Join(display.TabFlagNames(), ", "))
+	if err := rootCmd.RegisterFlagCompletionFunc("tab", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return display.TabFlagNames(), cobra.ShellCompDirectiveNoFileComp
+	}); err != nil {
+		panic(err)
+	}
 	rootCmd.PersistentFlags().StringVar(&resolverFlag, "resolver", "", "DNS resolver to use for DNS/mail lookups (host or host:port). Overrides "+dnsutil.ResolverEnvVar)
 	rootCmd.PersistentFlags().StringSliceVar(&dkimSelectorFlag, "dkim-selector", nil, "DKIM selector(s) to probe in addition to the built-in common list (repeatable, comma-separated). Overrides "+mail.DKIMSelectorsEnvVar)
 }

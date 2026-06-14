@@ -204,11 +204,110 @@ func NewIPModel(ip string) Model {
 	}
 }
 
+// struct for canonical mapping of --tab values to tabs
+var tabFlags = []struct {
+	name string
+	t    tab
+}{
+	{"whois", tabWhois},
+	{"dns", tabDNS},
+	{"mail", tabMail},
+	{"ssl", tabTLS},
+	{"tls", tabTLS},
+	{"http", tabHTTP},
+	{"seo", tabSEO},
+	{"stack", tabStack},
+}
+
+// TabFlagNames returns the accepted --tab values, in display order, for use in
+// command-line help and shell completion.
+func TabFlagNames() []string {
+	names := make([]string, len(tabFlags))
+	for i, e := range tabFlags {
+		names[i] = e.name
+	}
+	return names
+}
+
+// parseTab maps a user-supplied tab name to a tab constant (case-insensitive).
+func parseTab(name string) (tab, bool) {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "ssl/tls" {
+		name = "ssl"
+	}
+	for _, e := range tabFlags {
+		if e.name == name {
+			return e.t, true
+		}
+	}
+	return 0, false
+}
+
+// SetActiveTab selects the tab the TUI opens on. The name is case-insensitive
+// (see parseTab). It returns an error for unknown names or for tabs that don't
+// exist in IP mode. The chosen tab's fetching bit is set so Init issues its
+// fetch command (WHOIS is always kept loading, as the constructors mark it
+// fetching and the model assumes it loads first).
+func (m *Model) SetActiveTab(name string) error {
+	t, ok := parseTab(name)
+	if !ok {
+		return fmt.Errorf("unknown tab %q (valid: %s)", name, strings.Join(TabFlagNames(), ", "))
+	}
+	if m.isIP && t != tabWhois {
+		return fmt.Errorf("tab %q is not available for IP addresses", name)
+	}
+	m.active = t
+	if t != tabWhois {
+		m.setFetching(t, true)
+	}
+	return nil
+}
+
+// tabLoaded reports whether a tab's data has already been fetched, whether the
+// fetch succeeded or errored.
+func (m Model) tabLoaded(t tab) bool {
+	switch t {
+	case tabDNS:
+		return m.dnsData != nil || m.dnsErr != nil
+	case tabMail:
+		return m.mailData != nil || m.mailErr != nil
+	case tabTLS:
+		return m.tlsData != nil || m.tlsErr != nil
+	case tabHTTP:
+		return m.httpData != nil || m.httpErr != nil
+	case tabStack:
+		return m.stackData != nil || m.stackErr != nil
+	case tabSEO:
+		return m.seoData != nil || m.seoErr != nil
+	}
+	return false
+}
+
+// fetchCmdForTab returns the fetch command for a tab, or nil for tabs (whois)
+// that are fetched separately at startup.
+func fetchCmdForTab(t tab, domain string) tea.Cmd {
+	switch t {
+	case tabDNS:
+		return fetchDNS(domain)
+	case tabMail:
+		return fetchMail(domain)
+	case tabTLS:
+		return fetchTLS(domain)
+	case tabHTTP:
+		return fetchHTTP(domain)
+	case tabStack:
+		return fetchStack(domain)
+	case tabSEO:
+		return fetchSEO(domain)
+	}
+	return nil
+}
+
 func (m Model) Init() tea.Cmd {
 	if m.isIP {
 		return tea.Batch(backgroundColorCmd(), m.spinner.Tick, fetchIP(m.domain))
 	}
-	return tea.Batch(backgroundColorCmd(), m.spinner.Tick, fetchWhois(m.domain))
+	return tea.Batch(backgroundColorCmd(), m.spinner.Tick, fetchWhois(m.domain), fetchCmdForTab(m.active, m.domain))
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -495,31 +594,8 @@ func (m *Model) switchTab(t tab) {
 func (m *Model) activateTab(t tab) tea.Cmd {
 	m.switchTab(t)
 	var cmd tea.Cmd
-	switch t {
-	case tabDNS:
-		if m.dnsData == nil && m.dnsErr == nil && !m.isFetching(tabDNS) {
-			cmd = fetchDNS(m.domain)
-		}
-	case tabMail:
-		if m.mailData == nil && m.mailErr == nil && !m.isFetching(tabMail) {
-			cmd = fetchMail(m.domain)
-		}
-	case tabTLS:
-		if m.tlsData == nil && m.tlsErr == nil && !m.isFetching(tabTLS) {
-			cmd = fetchTLS(m.domain)
-		}
-	case tabHTTP:
-		if m.httpData == nil && m.httpErr == nil && !m.isFetching(tabHTTP) {
-			cmd = fetchHTTP(m.domain)
-		}
-	case tabStack:
-		if m.stackData == nil && m.stackErr == nil && !m.isFetching(tabStack) {
-			cmd = fetchStack(m.domain)
-		}
-	case tabSEO:
-		if m.seoData == nil && m.seoErr == nil && !m.isFetching(tabSEO) {
-			cmd = fetchSEO(m.domain)
-		}
+	if !m.tabLoaded(t) && !m.isFetching(t) {
+		cmd = fetchCmdForTab(t, m.domain)
 	}
 	if cmd != nil {
 		m.setFetching(t, true)

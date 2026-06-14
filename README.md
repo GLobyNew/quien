@@ -65,6 +65,10 @@ quien
 # Domain lookup (interactive TUI)
 quien example.com
 
+# Open the TUI on a specific tab (case-insensitive):
+# whois, dns, mail, ssl (or tls), http, seo, stack
+quien example.com --tab stack
+
 # IP address lookup
 quien 8.8.8.8
 

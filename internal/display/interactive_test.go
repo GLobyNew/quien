@@ -116,3 +116,59 @@ func TestResolveFirstIPValueUsesAAAAWhenANotPresent(t *testing.T) {
 		t.Fatalf("resolveFirstIPValue() = %q, want %q", ip, "2001:db8::2")
 	}
 }
+
+func TestSetActiveTab(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		want tab
+	}{
+		{"whois", tabWhois},
+		{"WHOIS", tabWhois},
+		{"dns", tabDNS},
+		{"Mail", tabMail},
+		{"ssl", tabTLS},
+		{"tls", tabTLS},
+		{"SSL/TLS", tabTLS},
+		{"  http ", tabHTTP},
+		{"seo", tabSEO},
+		{"Stack", tabStack},
+	}
+	for _, c := range cases {
+		m := NewModel("example.com")
+		if err := m.SetActiveTab(c.name); err != nil {
+			t.Fatalf("SetActiveTab(%q) error = %v", c.name, err)
+		}
+		if m.active != c.want {
+			t.Fatalf("SetActiveTab(%q) active = %v, want %v", c.name, m.active, c.want)
+		}
+		if !m.isFetching(tabWhois) {
+			t.Fatalf("SetActiveTab(%q) should keep WHOIS fetching", c.name)
+		}
+		if c.want != tabWhois && !m.isFetching(c.want) {
+			t.Fatalf("SetActiveTab(%q) should mark %v as fetching", c.name, c.want)
+		}
+	}
+}
+
+func TestSetActiveTabUnknown(t *testing.T) {
+	t.Parallel()
+
+	m := NewModel("example.com")
+	if err := m.SetActiveTab("bogus"); err == nil {
+		t.Fatal("SetActiveTab(\"bogus\") expected error, got nil")
+	}
+}
+
+func TestSetActiveTabIPRejectsNonWhois(t *testing.T) {
+	t.Parallel()
+
+	m := NewIPModel("8.8.8.8")
+	if err := m.SetActiveTab("stack"); err == nil {
+		t.Fatal("SetActiveTab(\"stack\") on IP expected error, got nil")
+	}
+	if err := m.SetActiveTab("whois"); err != nil {
+		t.Fatalf("SetActiveTab(\"whois\") on IP error = %v", err)
+	}
+}
